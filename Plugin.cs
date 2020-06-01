@@ -8,29 +8,19 @@ using IPA;
 using IPA.Config;
 using IPA.Config.Stores;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using IPALogger = IPA.Logging.Logger;
 
 namespace JustTakeMeToTheSoloMode
 {
     [Plugin(RuntimeOptions.SingleStartInit)]
-    //[Plugin(RuntimeOptions.DynamicInit)]
     public class Plugin
     {
-        // TODO: If using Harmony, uncomment and change YourGitHub to the name of your GitHub account, or use the form "com.company.project.product"
-        //       You must also add a reference to the Harmony assembly in the Libs folder.
-        // public const string HarmonyId = "com.github.YourGitHub.JustTakeMeToTheSoloMode";
-        // internal static HarmonyInstance harmony => HarmonyInstance.Create(HarmonyId);
-
         internal static Plugin instance { get; private set; }
         internal static string Name => "JustTakeMeToTheSoloMode";
-        internal static JustTakeMeToTheSoloModeController PluginController { get { return JustTakeMeToTheSoloModeController.instance; } }
 
         [Init]
-        /// <summary>
-        /// Called when the plugin is first loaded by IPA (either when the game starts or when the plugin is enabled if it starts disabled).
-        /// [Init] methods that use a Constructor or called before regular methods like InitWithConfig.
-        /// Only use [Init] with one Constructor.
-        /// </summary>
         public Plugin(IPALogger logger, Config conf)
         {
             instance = this;
@@ -40,87 +30,65 @@ namespace JustTakeMeToTheSoloMode
             Configuration.PluginConfig.Instance = conf.Generated<Configuration.PluginConfig>();
             Logger.log.Debug("Config loaded");
 
-            OnEnable();
+            SceneManager.activeSceneChanged += OnActiveSceneChanged;
         }
 
-        #region IDisablable
+        private static readonly string ButtonTextContinue = "Continue";
+        private static readonly string ButtonTextSolo = "SoloFreePlayButton";
 
-        /// <summary>
-        /// Called when the plugin is enabled (including when the game starts if the plugin is enabled).
-        /// </summary>
-        //[OnEnable]
-        public void OnEnable()
+        private void OnActiveSceneChanged(Scene prevScene, Scene nextScene)
         {
-            new GameObject("JustTakeMeToTheSoloModeController").AddComponent<JustTakeMeToTheSoloModeController>();
-            //ApplyHarmonyPatches();
-        }
+            Logger.log?.Debug($"nextScene.name={nextScene.name}");
 
-        /// <summary>
-        /// Called when the plugin is disabled and on Beat Saber quit. It is important to clean up any Harmony patches, GameObjects, and Monobehaviours here.
-        /// The game should be left in a state as if the plugin was never started.
-        /// Methods marked [OnDisable] must return void or Task.
-        /// </summary>
-        /*
-        [OnDisable]
-        public void OnDisable()
-        {
-            if (PluginController != null)
-                GameObject.Destroy(PluginController);
-            //RemoveHarmonyPatches();
-        }
-        */
-
-        /*
-           /// <summary>
-           /// Called when the plugin is disabled and on Beat Saber quit.
-           /// Return Task for when the plugin needs to do some long-running, asynchronous work to disable.
-           /// [OnDisable] methods that return Task are called after all [OnDisable] methods that return void.
-           /// </summary>
-           [OnDisable]
-           public async Task OnDisableAsync()
-           {
-               await LongRunningUnloadTask().ConfigureAwait(false);
-           }
-       */
-        #endregion
-
-        // Uncomment the methods in this section if using Harmony
-        #region Harmony
-        /*
-        /// <summary>
-        /// Attempts to apply all the Harmony patches in this assembly.
-        /// </summary>
-        public static void ApplyHarmonyPatches()
-        {
-            try
+            if (nextScene.name == "HealthWarning")
             {
-                Logger.log.Debug("Applying Harmony patches.");
-                harmony.PatchAll(Assembly.GetExecutingAssembly());
+                PersistentSingleton<SharedCoroutineStarter>.instance.StartCoroutine(buttonClickCoroutine(ButtonTextContinue));
             }
-            catch (Exception ex)
+            else if (nextScene.name == "MenuViewControllers")
             {
-                Logger.log.Critical("Error applying Harmony patches: " + ex.Message);
-                Logger.log.Debug(ex);
+                PersistentSingleton<SharedCoroutineStarter>.instance.StartCoroutine(buttonClickCoroutine(ButtonTextSolo));
             }
         }
 
-        /// <summary>
-        /// Attempts to remove all the Harmony patches that used our HarmonyId.
-        /// </summary>
-        public static void RemoveHarmonyPatches()
+        private IEnumerator buttonClickCoroutine(string buttonName)
         {
-            try
+            /*
+            foreach (Button b in Resources.FindObjectsOfTypeAll<Button>())
             {
-                // Removes all patches with this HarmonyId
-                harmony.UnpatchAll(HarmonyId);
+                Logger.log?.Debug($"Button.name={b.name}");
             }
-            catch (Exception ex)
+            */
+
+            Logger.log?.Debug($"Time.time={Time.time}, WaitUntil={buttonName}");
+            yield return new WaitUntil(() => Resources.FindObjectsOfTypeAll<Button>().Any(x => x != null && x.name == buttonName));
+            Logger.log?.Debug($"Time.time={Time.time}, Found");
+            Button button = Resources.FindObjectsOfTypeAll<Button>().Where(x => x != null && x.name == buttonName).First();
+
+            // need some wait
+            yield return new WaitForSecondsRealtime(Configuration.PluginConfig.Instance.wait);
+
+            button.onClick.Invoke();
+
+            if ((Configuration.PluginConfig.Instance.selectTab >= 0) && (Configuration.PluginConfig.Instance.selectTab <= 3))
             {
-                Logger.log.Critical("Error removing Harmony patches: " + ex.Message);
-                Logger.log.Debug(ex);
+                // need some wait
+                yield return new WaitForSecondsRealtime(1f);
+
+                LevelFilteringNavigationController levelFilteringNavigationController = Resources.FindObjectsOfTypeAll<LevelFilteringNavigationController>().First();
+                TabBarViewController tabBarViewController = levelFilteringNavigationController?.GetPrivateField<TabBarViewController>("_tabBarViewController");
+                if (levelFilteringNavigationController != null && tabBarViewController != null)
+                {
+                    tabBarViewController.SelectItem(Configuration.PluginConfig.Instance.selectTab);
+                    levelFilteringNavigationController.SwitchToPlaylists();
+                }
+            }
+
+            // no longer needed
+            if (buttonName == ButtonTextSolo)
+            {
+                SceneManager.activeSceneChanged -= OnActiveSceneChanged;
+                Logger.log?.Debug($"done");
             }
         }
-    */
-        #endregion
     }
 }
