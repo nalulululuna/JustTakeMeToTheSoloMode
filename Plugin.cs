@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using IPA;
 using IPA.Config;
 using IPA.Config.Stores;
+using IPA.Utilities;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -46,8 +47,17 @@ namespace JustTakeMeToTheSoloMode
             }
             else if (nextScene.name == "MenuViewControllers")
             {
+                Logger.log?.Debug($"OnActiveSceneChanged Disabled");
+                SceneManager.activeSceneChanged -= OnActiveSceneChanged;
+
                 PersistentSingleton<SharedCoroutineStarter>.instance.StartCoroutine(buttonClickCoroutine(ButtonTextSolo));
             }
+        }
+
+        private bool AreSongsLoading(MonoBehaviour loader)
+        {
+            var prop = loader.GetType().GetProperty("AreSongsLoading", BindingFlags.Public | BindingFlags.Static);
+            return (bool)prop.GetValue(loader);
         }
 
         private IEnumerator buttonClickCoroutine(string buttonName)
@@ -67,15 +77,38 @@ namespace JustTakeMeToTheSoloMode
             // need some wait
             yield return new WaitForSecondsRealtime(Configuration.PluginConfig.Instance.wait);
 
+            // wait for SongCore
+            GameObject songCoreLoader = GameObject.Find("SongCore Loader");
+            if (songCoreLoader != null)
+            {
+                Logger.log?.Debug($"Time.time={Time.time}, SongCore Found");
+                foreach (var monoBehaviour in songCoreLoader.GetComponents<MonoBehaviour>())
+                {
+                    if (monoBehaviour.GetType().Name == "Loader")
+                    {
+                        Logger.log?.Debug($"Time.time={Time.time}, SongCore Loader Found");
+
+                        Logger.log?.Debug($"Time.time={Time.time}, WaitUntil AreSongsLoading");
+                        yield return new WaitUntil(() => AreSongsLoading(monoBehaviour) == false);
+                        Logger.log?.Debug($"Time.time={Time.time}, SongsLoaded");
+
+                        // need some wait for update screen
+                        yield return new WaitForSecondsRealtime(1f);
+
+                        break;
+                    }
+                }
+            }
+
             button.onClick.Invoke();
 
             if ((Configuration.PluginConfig.Instance.selectTab >= 0) && (Configuration.PluginConfig.Instance.selectTab <= 3))
             {
                 // need some wait
-                yield return new WaitForSecondsRealtime(1f);
+                yield return new WaitForSecondsRealtime(Configuration.PluginConfig.Instance.wait);
 
                 LevelFilteringNavigationController levelFilteringNavigationController = Resources.FindObjectsOfTypeAll<LevelFilteringNavigationController>().First();
-                TabBarViewController tabBarViewController = levelFilteringNavigationController?.GetPrivateField<TabBarViewController>("_tabBarViewController");
+                TabBarViewController tabBarViewController = levelFilteringNavigationController?.GetField<TabBarViewController, LevelFilteringNavigationController>("_tabBarViewController");
                 if (levelFilteringNavigationController != null && tabBarViewController != null)
                 {
                     tabBarViewController.SelectItem(Configuration.PluginConfig.Instance.selectTab);
@@ -83,12 +116,7 @@ namespace JustTakeMeToTheSoloMode
                 }
             }
 
-            // no longer needed
-            if (buttonName == ButtonTextSolo)
-            {
-                SceneManager.activeSceneChanged -= OnActiveSceneChanged;
-                Logger.log?.Debug($"done");
-            }
+            Logger.log?.Debug($"Time.time={Time.time}, Done");
         }
     }
 }
